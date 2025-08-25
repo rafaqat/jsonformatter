@@ -1,0 +1,281 @@
+import SwiftUI
+import Factory
+import Observation
+
+@Observable
+@MainActor
+public final class DocumentViewModel {
+    // Properties - no @Published needed with @Observable
+    public var jsonContent: String = """
+{
+  "array": [
+    1,
+    2,
+    3
+  ],
+  "boolean": true,
+  "color": "gold",
+  "null": null,
+  "number": 123,
+  "object": {
+    "a": "b",
+    "c": "d"
+  },
+  "string": "Hello World"
+}
+"""
+    public var parsedJSON: JSONNode?
+    public var validationErrors: [JSONError] = []
+    public var currentTab: Tab = .editor
+    public var isFormatting: Bool = false
+    public var isValidating: Bool = false
+    public var statusMessage: String = "Ready"
+    
+    // Services
+    private let parser = JSONParser()
+    private let fixer = JSONFixer()
+    private let validator = JSONValidator()
+    
+    public init() {
+        // Parse the default JSON content on initialization
+        Task {
+            await format()
+        }
+    }
+    
+    // Nonisolated for background processing
+    nonisolated private func parseInBackground(_ content: String) async throws -> JSONNode {
+        try await parser.parse(content)
+    }
+    
+    nonisolated private func fixInBackground(_ content: String) async -> JSONFixer.FixResult {
+        await fixer.fix(content)
+    }
+    
+    // Format JSON
+    public func format() async {
+        isFormatting = true
+        statusMessage = "Formatting..."
+        defer { 
+            isFormatting = false 
+            statusMessage = "Ready"
+        }
+        
+        guard !jsonContent.isEmpty else {
+            validationErrors = [JSONError(line: 0, column: 0, message: "No content to format")]
+            statusMessage = "Error: No content"
+            return
+        }
+        
+        do {
+            let parsed = try await parseInBackground(jsonContent)
+            parsedJSON = parsed
+            jsonContent = parsed.formatted
+            validationErrors = []
+            statusMessage = "Formatted successfully"
+        } catch {
+            // Try to fix the JSON
+            let fixResult = await fixInBackground(jsonContent)
+            
+            do {
+                let parsed = try await parseInBackground(fixResult.fixed)
+                parsedJSON = parsed
+                jsonContent = parsed.formatted
+                
+                if fixResult.wasFixed {
+                    let fixes = fixResult.fixes.joined(separator: ", ")
+                    validationErrors = [JSONError(
+                        line: 0,
+                        column: 0,
+                        message: "Auto-fixed: \(fixes)",
+                        severity: .warning
+                    )]
+                    statusMessage = "Formatted with fixes"
+                } else {
+                    validationErrors = []
+                    statusMessage = "Formatted successfully"
+                }
+            } catch {
+                validationErrors = [JSONError(from: error)]
+                statusMessage = "Error: Invalid JSON"
+            }
+        }
+    }
+    
+    // Minify JSON
+    public func minify() async {
+        isFormatting = true
+        statusMessage = "Minifying..."
+        defer { 
+            isFormatting = false
+            statusMessage = "Ready"
+        }
+        
+        guard !jsonContent.isEmpty else {
+            validationErrors = [JSONError(line: 0, column: 0, message: "No content to minify")]
+            statusMessage = "Error: No content"
+            return
+        }
+        
+        do {
+            let parsed = try await parseInBackground(jsonContent)
+            parsedJSON = parsed
+            jsonContent = parsed.minified
+            validationErrors = []
+            statusMessage = "Minified successfully"
+        } catch {
+            // Try to fix the JSON
+            let fixResult = await fixInBackground(jsonContent)
+            
+            do {
+                let parsed = try await parseInBackground(fixResult.fixed)
+                parsedJSON = parsed
+                jsonContent = parsed.minified
+                
+                if fixResult.wasFixed {
+                    let fixes = fixResult.fixes.joined(separator: ", ")
+                    validationErrors = [JSONError(
+                        line: 0,
+                        column: 0,
+                        message: "Auto-fixed: \(fixes)",
+                        severity: .warning
+                    )]
+                    statusMessage = "Minified with fixes"
+                } else {
+                    validationErrors = []
+                    statusMessage = "Minified successfully"
+                }
+            } catch {
+                validationErrors = [JSONError(from: error)]
+                statusMessage = "Error: Invalid JSON"
+            }
+        }
+    }
+    
+    // Validate JSON
+    public func validate() async {
+        isValidating = true
+        statusMessage = "Validating..."
+        defer { 
+            isValidating = false
+        }
+        
+        guard !jsonContent.isEmpty else {
+            validationErrors = []
+            parsedJSON = nil
+            statusMessage = "Ready"
+            return
+        }
+        
+        // Use the improved validator
+        let validationResult = await validator.validate(jsonContent)
+        validationErrors = validationResult.errors
+        
+        // Try to parse for tree view
+        do {
+            let parsed = try await parseInBackground(jsonContent)
+            parsedJSON = parsed
+            
+            if validationResult.isValid {
+                statusMessage = "Valid JSON"
+            } else if validationResult.hasErrors {
+                statusMessage = "Invalid JSON - \(validationResult.errors.filter { $0.severity == .error }.count) error(s)"
+            } else {
+                statusMessage = "Valid JSON with warnings"
+            }
+        } catch {
+            parsedJSON = nil
+            if validationErrors.isEmpty {
+                validationErrors = [JSONError(from: error)]
+            }
+            statusMessage = "Invalid JSON"
+        }
+    }
+    
+    // Clear content
+    public func clear() {
+        jsonContent = ""
+        parsedJSON = nil
+        validationErrors = []
+        statusMessage = "Ready"
+    }
+    
+    // Copy to clipboard
+    public func copyToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(jsonContent, forType: .string)
+        statusMessage = "Copied to clipboard"
+    }
+    
+    // Paste from clipboard
+    public func pasteFromClipboard() async {
+        let pasteboard = NSPasteboard.general
+        guard let content = pasteboard.string(forType: .string) else {
+            statusMessage = "Clipboard is empty"
+            return
+        }
+        
+        jsonContent = content
+        await validate()
+    }
+    
+    // Auto-fix JSON
+    public func autoFix() async {
+        isFormatting = true
+        statusMessage = "Auto-fixing..."
+        defer { 
+            isFormatting = false
+        }
+        
+        guard !jsonContent.isEmpty else {
+            validationErrors = [JSONError(line: 0, column: 0, message: "No content to fix")]
+            statusMessage = "Error: No content"
+            return
+        }
+        
+        let fixResult = await fixInBackground(jsonContent)
+        
+        if fixResult.wasFixed {
+            jsonContent = fixResult.fixed
+            await format() // Format after fixing
+            
+            let fixes = fixResult.fixes.joined(separator: ", ")
+            validationErrors = [JSONError(
+                line: 0,
+                column: 0,
+                message: "Fixed: \(fixes)",
+                severity: .info
+            )]
+            statusMessage = "Auto-fixed and formatted"
+        } else {
+            await format() // Just format if no fixes needed
+        }
+    }
+}
+
+public enum Tab: String, CaseIterable, Identifiable {
+    case editor = "Editor"
+    case tree = "Tree"
+    case graph = "Graph"
+    case chart = "Chart"
+    case map = "Map"
+    case diff = "Diff"
+    case stats = "Stats"
+    case search = "Search"
+    
+    public var id: String { rawValue }
+    
+    public var icon: String {
+        switch self {
+        case .editor: return "doc.text"
+        case .tree: return "list.bullet.indent"
+        case .graph: return "point.3.connected.trianglepath.dotted"
+        case .chart: return "chart.bar"
+        case .map: return "map"
+        case .diff: return "doc.on.doc"
+        case .stats: return "chart.pie"
+        case .search: return "magnifyingglass"
+        }
+    }
+}

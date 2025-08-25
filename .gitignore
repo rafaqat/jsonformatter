@@ -1,0 +1,23 @@
+# Xcode
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Backup files
+*.backup
+Sources/CodeEditorCustom.backup/
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
