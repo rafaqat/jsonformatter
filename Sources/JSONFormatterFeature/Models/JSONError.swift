@@ -6,6 +6,7 @@ public struct JSONError: Error, Sendable, Identifiable, Equatable {
     public let column: Int
     public let message: String
     public let severity: ErrorSeverity
+    public let suggestion: String?
     
     public static func == (lhs: JSONError, rhs: JSONError) -> Bool {
         lhs.line == rhs.line && 
@@ -14,11 +15,12 @@ public struct JSONError: Error, Sendable, Identifiable, Equatable {
         lhs.severity == rhs.severity
     }
     
-    public init(line: Int, column: Int, message: String, severity: ErrorSeverity = .error) {
+    public init(line: Int, column: Int, message: String, severity: ErrorSeverity = .error, suggestion: String? = nil) {
         self.line = line
         self.column = column
         self.message = message
         self.severity = severity
+        self.suggestion = suggestion
     }
     
     public init(from error: Error) {
@@ -26,6 +28,7 @@ public struct JSONError: Error, Sendable, Identifiable, Equatable {
         self.column = 0
         self.message = error.localizedDescription
         self.severity = .error
+        self.suggestion = nil
     }
 }
 

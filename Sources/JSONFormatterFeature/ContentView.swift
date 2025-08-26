@@ -56,6 +56,78 @@ public struct ContentView: View {
     
     public init() {}
     
+    private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ClearContent"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                viewModel?.clear()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CopyToClipboard"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                viewModel?.copyToClipboard()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("PasteFromClipboard"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                await viewModel?.pasteFromClipboard()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("FormatJSON"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                await viewModel?.format()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("MinifyJSON"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                await viewModel?.minify()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("AutoFixJSON"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                await viewModel?.autoFix()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ValidateJSON"),
+            object: nil,
+            queue: .main
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                await viewModel?.validate()
+            }
+        }
+    }
+    
     public var body: some View {
         VStack(spacing: 0) {
             // Tab Bar
@@ -69,25 +141,44 @@ public struct ContentView: View {
             Group {
                 switch viewModel.currentTab {
                 case .editor:
-                    CodeEditor(
-                        source: $viewModel.jsonContent,
-                        language: CodeEditor.Language(rawValue: "json"),
-                        theme: editorTheme,
-                        fontSize: .init(get: { editorFontSize }, set: { editorFontSize = $0 }),
-                        flags: [.selectable, .editable, .smartIndent],
-                        indentStyle: .softTab(width: 2)
-                    )
-                    .onAppear {
-                        print("🚀 CodeEditor appeared")
-                        print("  - Content length: \(viewModel.jsonContent.count)")
-                        print("  - Theme: \(editorTheme.rawValue)")
-                        
-                        // Print view hierarchy after a delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            if let window = NSApp.mainWindow {
-                                print("\n🔍 COMPLETE VIEW HIERARCHY:")
-                                printCompleteHierarchy(window.contentView)
+                    ZStack(alignment: .topLeading) {
+                        CodeEditor(
+                            source: $viewModel.jsonContent,
+                            language: CodeEditor.Language(rawValue: "json"),
+                            theme: editorTheme,
+                            fontSize: .init(get: { editorFontSize }, set: { editorFontSize = $0 }),
+                            flags: [.selectable, .editable, .smartIndent],
+                            indentStyle: .softTab(width: 2)
+                        )
+                        .onChange(of: viewModel.jsonContent) { _, _ in
+                            Task { await viewModel.validate() }
+                        }
+                        .onAppear {
+                            print("🚀 CodeEditor appeared")
+                            print("  - Content length: \(viewModel.jsonContent.count)")
+                            print("  - Theme: \(editorTheme.rawValue)")
+                            
+                            // Print view hierarchy after a delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                if let window = NSApp.mainWindow {
+                                    print("\n🔍 COMPLETE VIEW HIERARCHY:")
+                                    printCompleteHierarchy(window.contentView)
+                                }
                             }
+                        }
+                        
+                        // Xcode-style error overlay - positioned to not block editing
+                        if !viewModel.validationErrors.isEmpty {
+                            XcodeStyleErrorView(
+                                errors: viewModel.validationErrors,
+                                text: viewModel.jsonContent,
+                                fontSize: editorFontSize,
+                                onFixTapped: { error in
+                                    Task { await viewModel.applyFix(for: error) }
+                                }
+                            )
+                            .allowsHitTesting(true)
+                            .zIndex(1) // Ensure it's above the editor but doesn't block all interactions
                         }
                     }
                 case .tree:
@@ -112,7 +203,36 @@ public struct ContentView: View {
             StatusBarView(message: viewModel.statusMessage, errors: viewModel.validationErrors)
         }
         .frame(minWidth: 800, minHeight: 600)
+        .onAppear {
+            setupNotificationObservers()
+        }
         .toolbar {
+            // Clear, Copy and Auto Fix buttons on the extreme left
+            ToolbarItemGroup(placement: .navigation) {
+                Button(action: { viewModel.clear() }) {
+                    Label("Clear", systemImage: "trash")
+                }
+                .keyboardShortcut("k", modifiers: .command)
+                .help("Clear all content")
+                
+                Button(action: { viewModel.copyToClipboard() }) {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .help("Copy JSON to clipboard")
+                
+                Button(action: {
+                    Task { await viewModel.autoFix() }
+                }) {
+                    Label("Auto Fix", systemImage: "wand.and.stars")
+                        .foregroundColor(.orange)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .help("Automatically fix common JSON errors")
+                .disabled(viewModel.isFormatting)
+            }
+            
+            // Main toolbar items
             ToolbarItemGroup(placement: .automatic) {
                 // File operations
                 Button(action: {
@@ -158,19 +278,7 @@ public struct ContentView: View {
                 .disabled(viewModel.isFormatting)
                 .keyboardShortcut("m", modifiers: .command)
                 
-                Button(action: {
-                    Task { await viewModel.autoFix() }
-                }) {
-                    Label("Auto Fix", systemImage: "wand.and.stars")
-                }
-                .disabled(viewModel.isFormatting)
-                
                 Divider()
-                
-                Button(action: { viewModel.copyToClipboard() }) {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
                 
                 Button(action: {
                     Task { await viewModel.pasteFromClipboard() }
@@ -178,10 +286,6 @@ public struct ContentView: View {
                     Label("Paste", systemImage: "doc.on.clipboard")
                 }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
-                
-                Button(action: { viewModel.clear() }) {
-                    Label("Clear", systemImage: "trash")
-                }
 
                 Divider()
 

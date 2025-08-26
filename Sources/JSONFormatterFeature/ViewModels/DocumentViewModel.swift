@@ -8,20 +8,69 @@ public final class DocumentViewModel {
     // Properties - no @Published needed with @Observable
     public var jsonContent: String = """
 {
-  "array": [
-    1,
-    2,
-    3
-  ],
-  "boolean": true,
-  "color": "gold",
-  "null": null,
-  "number": 123,
-  "object": {
-    "a": "b",
-    "c": "d"
-  },
-  "string": "Hello World"
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Waitrose King's Road",
+        "city": "London",
+        "postcode": "SW3 5XP"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-0.1695, 51.4865]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Waitrose Oxford Street",
+        "city": "London",
+        "postcode": "W1C 1DX"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-0.1446, 51.5145]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Waitrose Edinburgh",
+        "city": "Edinburgh",
+        "postcode": "EH4 1AW"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-3.2153, 55.9583]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Waitrose Cambridge",
+        "city": "Cambridge",
+        "postcode": "CB2 9FT"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [0.1135, 52.1663]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Waitrose Manchester",
+        "city": "Manchester",
+        "postcode": "M32 9BD"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-2.3115, 53.4451]
+      }
+    }
+  ]
 }
 """
     public var parsedJSON: JSONNode?
@@ -33,7 +82,10 @@ public final class DocumentViewModel {
     
     // Services
     private let parser = JSONParser()
-    private let fixer = JSONFixer()
+    private let preciseParser = PreciseJSONParser()
+    private let parseTreeFixer = ParseTreeJSONFixer()
+    private let treeWalkingFixer = TreeWalkingJSONFixer()
+    private let smartFixer = SmartJSONFixer()
     private let validator = JSONValidator()
     
     public init() {
@@ -48,8 +100,12 @@ public final class DocumentViewModel {
         try await parser.parse(content)
     }
     
-    nonisolated private func fixInBackground(_ content: String) async -> JSONFixer.FixResult {
-        await fixer.fix(content)
+    nonisolated private func fixInBackground(_ content: String) async -> ParseTreeJSONFixer.FixResult {
+        await parseTreeFixer.fix(content)
+    }
+    
+    nonisolated private func treeWalkFixInBackground(_ content: String) async -> TreeWalkingJSONFixer.FixResult {
+        await treeWalkingFixer.fix(content)
     }
     
     // Format JSON
@@ -152,7 +208,7 @@ public final class DocumentViewModel {
         }
     }
     
-    // Validate JSON
+    // Validate JSON with precise error tracking
     public func validate() async {
         isValidating = true
         statusMessage = "Validating..."
@@ -167,28 +223,34 @@ public final class DocumentViewModel {
             return
         }
         
-        // Use the improved validator
-        let validationResult = await validator.validate(jsonContent)
-        validationErrors = validationResult.errors
+        // Use PreciseJSONParser for detailed error tracking
+        let preciseErrors = await preciseParser.validate(jsonContent)
         
-        // Try to parse for tree view
-        do {
-            let parsed = try await parseInBackground(jsonContent)
-            parsedJSON = parsed
+        if !preciseErrors.isEmpty {
+            validationErrors = preciseErrors
+            statusMessage = "Invalid JSON - \(preciseErrors.filter { $0.severity == .error }.count) error(s)"
             
-            if validationResult.isValid {
+            // Try to parse what we can for tree view
+            do {
+                let parsed = try await parseInBackground(jsonContent)
+                parsedJSON = parsed
+            } catch {
+                parsedJSON = nil
+            }
+        } else {
+            // Valid JSON - parse for tree view
+            do {
+                let parsed = try await parseInBackground(jsonContent)
+                parsedJSON = parsed
+                validationErrors = []
                 statusMessage = "Valid JSON"
-            } else if validationResult.hasErrors {
-                statusMessage = "Invalid JSON - \(validationResult.errors.filter { $0.severity == .error }.count) error(s)"
-            } else {
-                statusMessage = "Valid JSON with warnings"
+            } catch {
+                // Fallback to basic validator if parse fails
+                let validationResult = await validator.validate(jsonContent)
+                validationErrors = validationResult.errors
+                parsedJSON = nil
+                statusMessage = "Invalid JSON"
             }
-        } catch {
-            parsedJSON = nil
-            if validationErrors.isEmpty {
-                validationErrors = [JSONError(from: error)]
-            }
-            statusMessage = "Invalid JSON"
         }
     }
     
@@ -234,23 +296,69 @@ public final class DocumentViewModel {
             return
         }
         
-        let fixResult = await fixInBackground(jsonContent)
+        // IMPORTANT: Run parse tree fixer FIRST to fix structural issues
+        // This will fix missing brackets before the parser sees them
+        let treeFixResult = await fixInBackground(jsonContent)
         
-        if fixResult.wasFixed {
-            jsonContent = fixResult.fixed
-            await format() // Format after fixing
+        // Then get parser errors on the potentially fixed JSON
+        let parseErrors = await preciseParser.validate(treeFixResult.fixed)
+        
+        // Use smart fixer with parser errors for targeted fixes
+        let smartFixResult = await smartFixer.fix(treeFixResult.fixed, errors: parseErrors)
+        
+        // Use tree-walking fixer for deep structural analysis
+        let treeWalkResult = await treeWalkFixInBackground(smartFixResult.fixed)
+        
+        // Run parse tree fixer again for final cleanup
+        let finalTreeFix = await fixInBackground(treeWalkResult.fixed)
+        
+        // Combine results from all fixers
+        let finalFixed = finalTreeFix.wasFixed ? finalTreeFix.fixed :
+                        (treeWalkResult.wasFixed ? treeWalkResult.fixed : 
+                         (smartFixResult.wasFixed ? smartFixResult.fixed : treeFixResult.fixed))
+        let allFixes = treeFixResult.fixes + smartFixResult.fixes + treeWalkResult.fixes + finalTreeFix.fixes
+        
+        if !allFixes.isEmpty {
+            jsonContent = finalFixed
             
-            let fixes = fixResult.fixes.joined(separator: ", ")
-            validationErrors = [JSONError(
-                line: 0,
-                column: 0,
-                message: "Fixed: \(fixes)",
-                severity: .info
-            )]
-            statusMessage = "Auto-fixed and formatted"
+            // Try to parse and format the fixed JSON
+            do {
+                let parsed = try await parseInBackground(finalFixed)
+                parsedJSON = parsed
+                jsonContent = parsed.formatted
+                
+                // Show what was fixed as info message
+                let fixes = allFixes.joined(separator: ", ")
+                validationErrors = [JSONError(
+                    line: 0,
+                    column: 0,
+                    message: "Successfully fixed: \(fixes)",
+                    severity: .info
+                )]
+                statusMessage = "Auto-fixed and formatted"
+                
+                // Clear the info message after a delay
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+                    if validationErrors.count == 1 && validationErrors.first?.severity == .info {
+                        validationErrors = []
+                    }
+                }
+            } catch {
+                // If still has errors after fix, show them
+                await validate()
+            }
         } else {
-            await format() // Just format if no fixes needed
+            // No fixes needed, just format
+            await format()
         }
+    }
+    
+    // Apply fix for a specific error (or all errors)
+    public func applyFix(for error: JSONError) async {
+        // Just use the existing auto-fix functionality which uses JSONFixer
+        // It will fix ALL issues at once, not just this specific error
+        await autoFix()
     }
 }
 

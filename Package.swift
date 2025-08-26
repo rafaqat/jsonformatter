@@ -14,6 +14,14 @@ let package = Package(
         .executable(
             name: "JSONFormatterApp",
             targets: ["JSONFormatterApp"]
+        ),
+        .executable(
+            name: "TestRunner",
+            targets: ["TestRunner"]
+        ),
+        .executable(
+            name: "BracketTest",
+            targets: ["BracketTest"]
         )
     ],
     dependencies: [
@@ -31,6 +39,14 @@ let package = Package(
         ),
         .executableTarget(
             name: "JSONFormatterApp",
+            dependencies: ["JSONFormatterFeature"]
+        ),
+        .executableTarget(
+            name: "TestRunner",
+            dependencies: ["JSONFormatterFeature"]
+        ),
+        .executableTarget(
+            name: "BracketTest",
             dependencies: ["JSONFormatterFeature"]
         ),
         .testTarget(

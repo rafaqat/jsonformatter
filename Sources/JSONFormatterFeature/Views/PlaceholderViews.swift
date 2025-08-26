@@ -294,9 +294,17 @@ struct MapView: View {
     )
     @State private var selectedLocation: GeoLocation? = nil
     
+    private func debugPrintLocations(_ locations: [GeoLocation]) {
+        print("🗺️ MapView: Extracted \(locations.count) locations")
+        for (index, location) in locations.prefix(5).enumerated() {
+            print("  Location \(index): \(location.name) at (\(location.coordinate.latitude), \(location.coordinate.longitude))")
+        }
+    }
+    
     var body: some View {
         if let json = json {
             let locations = extractGeoLocations(from: json)
+            let _ = debugPrintLocations(locations)
             
             if !locations.isEmpty {
                 ZStack {
@@ -395,7 +403,26 @@ struct MapView: View {
         
         switch node {
         case .object(let dict):
-            // Check if this object contains coordinates
+            // Check for GeoJSON FeatureCollection
+            if let typeNode = dict["type"], case .string(let type) = typeNode {
+                if type == "FeatureCollection", 
+                   let featuresNode = dict["features"], 
+                   case .array(let features) = featuresNode {
+                    print("🗺️ Found GeoJSON FeatureCollection with \(features.count) features")
+                    for (index, feature) in features.enumerated() {
+                        locations.append(contentsOf: extractGeoLocations(from: feature, path: "\(path).features[\(index)]"))
+                    }
+                    return locations
+                } else if type == "Feature" {
+                    // Handle GeoJSON Feature
+                    if let location = extractGeoJSONFeature(dict, path: path) {
+                        locations.append(location)
+                    }
+                    return locations
+                }
+            }
+            
+            // Check if this object contains coordinates (regular format)
             if let location = extractLocationFromObject(dict, path: path) {
                 locations.append(location)
             }
@@ -416,6 +443,81 @@ struct MapView: View {
         }
         
         return locations
+    }
+    
+    private func extractGeoJSONFeature(_ dict: [String: JSONNode], path: String) -> GeoLocation? {
+        // Extract geometry
+        guard let geometryNode = dict["geometry"],
+              case .object(let geometry) = geometryNode,
+              let typeNode = geometry["type"],
+              case .string(let geoType) = typeNode else {
+            print("🗺️ No valid geometry in GeoJSON feature at \(path)")
+            return nil
+        }
+        
+        // Extract properties for name
+        var name = path
+        if let propertiesNode = dict["properties"],
+           case .object(let properties) = propertiesNode {
+            for key in ["name", "title", "label", "place", "city", "address"] {
+                if let nameNode = properties[key], case .string(let str) = nameNode {
+                    name = str
+                    break
+                }
+            }
+        }
+        
+        // Handle Point geometry
+        if geoType == "Point",
+           let coordsNode = geometry["coordinates"],
+           case .array(let coords) = coordsNode,
+           coords.count >= 2,
+           case .number(let lng) = coords[0],
+           case .number(let lat) = coords[1] {
+            print("🗺️ Found GeoJSON Point: \(name) at (\(lat), \(lng))")
+            return GeoLocation(
+                name: name,
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                radius: nil,
+                color: .blue
+            )
+        }
+        
+        // For other geometry types, extract first coordinate
+        if let coordsNode = geometry["coordinates"] {
+            if let firstCoord = extractFirstCoordinate(from: coordsNode) {
+                print("🗺️ Found GeoJSON \(geoType): \(name) at (\(firstCoord.latitude), \(firstCoord.longitude))")
+                return GeoLocation(
+                    name: "\(name) (\(geoType))",
+                    coordinate: firstCoord,
+                    radius: nil,
+                    color: .purple
+                )
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractFirstCoordinate(from node: JSONNode) -> CLLocationCoordinate2D? {
+        switch node {
+        case .array(let coords):
+            // Check if it's a coordinate pair [lng, lat]
+            if coords.count >= 2,
+               case .number(let lng) = coords[0],
+               case .number(let lat) = coords[1] {
+                return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            }
+            // Otherwise check nested arrays
+            for coord in coords {
+                if let result = extractFirstCoordinate(from: coord) {
+                    return result
+                }
+            }
+        default:
+            break
+        }
+        return nil
     }
     
     private func extractLocationFromObject(_ dict: [String: JSONNode], path: String) -> GeoLocation? {

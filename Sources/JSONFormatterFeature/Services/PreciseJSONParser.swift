@@ -427,12 +427,33 @@ public actor PreciseJSONParser {
     }
     
     private func createError(_ message: String, severity: ErrorSeverity = .error) -> JSONError {
+        let suggestion = getSuggestion(for: message)
         return JSONError(
             line: line,
             column: column,
             message: message,
-            severity: severity
+            severity: severity,
+            suggestion: suggestion
         )
+    }
+    
+    private func getSuggestion(for message: String) -> String? {
+        if message.contains("Trailing comma") {
+            return "Remove the trailing comma"
+        } else if message.contains("Expected string key") {
+            return "Add quotes around the property name"
+        } else if message.contains("Unterminated string") {
+            return "Add closing quote"
+        } else if message.contains("Expected ',' or") {
+            return "Add a comma between elements"
+        } else if message.contains("Duplicate key") {
+            return "Remove or rename the duplicate key"
+        } else if message.contains("Invalid escape sequence") {
+            return "Use a valid escape sequence"
+        } else if message.contains("leading zeros") {
+            return "Remove leading zeros from the number"
+        }
+        return "Use Auto-Fix to correct common JSON issues"
     }
     
     // MARK: - Error Recovery
