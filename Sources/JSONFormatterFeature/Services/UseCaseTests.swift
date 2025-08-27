@@ -370,8 +370,8 @@ public class UseCaseTests {
 }
 
 // Helper extension for string repetition
-extension String {
+private extension String {
     static func *(lhs: String, rhs: Int) -> String {
-        return String(repeating: lhs, count: rhs)
+        String(repeating: lhs, count: rhs)
     }
 }

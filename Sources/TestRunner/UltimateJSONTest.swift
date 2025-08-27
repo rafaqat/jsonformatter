@@ -11,8 +11,8 @@ struct UltimateJSONTest {
         print("🚀 ULTIMATE JSON VALIDATION TEST SUITE")
         print("=" * 80)
         
-        let fixer = ParseTreeJSONFixer()
-        let parser = PreciseJSONParser()
+        let fixer = JSONFixer()
+        let parser = JSONParser()
         
         // COMPREHENSIVE test cases covering ALL JSON error types
         let testSuite = [
@@ -75,7 +75,7 @@ struct UltimateJSONTest {
             // COMMENTS (invalid in JSON)
             ("C++ style comment", #"{ "key": "value" // comment }"#),
             ("C style comment", #"{ "key": /* comment */ "value" }"#),
-            ("Hash comment", #"{ "key": "value" }"#),
+            ("Hash comment", #"{ "key": "value" } # comment"#),
             
             // COMPLEX REAL-WORLD CASES  
             ("Your exact GeoJSON case", #"{ "type": "Feature", "properties": { "name": "Waitrose } }"#),
@@ -84,6 +84,13 @@ struct UltimateJSONTest {
             
             // EVERYTHING WRONG
             ("Maximum chaos", #"{ key1: value1 "key2 value2", key3": [1 2 3}, "key4": {nested: true }"#),
+            
+            // MULTIPLE ROOT OBJECTS
+            ("Multiple objects with commas", """
+            {"field1":"aa11","field2":"aa22"},
+            {"field1":"bb11","field2":"bb22"}, 
+            {"field1":"cc11","field2":"cc22"}
+            """),
         ]
         
         var results = TestResults()

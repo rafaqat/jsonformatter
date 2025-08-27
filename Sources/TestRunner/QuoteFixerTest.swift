@@ -4,11 +4,11 @@ import JSONFormatterFeature
 struct QuoteFixerTest {
     static func main() async {
         print("=" * 80)
-        print("🧪 QUOTE FIXER TEST - Testing ParseTreeJSONFixer")
+        print("🧪 QUOTE FIXER TEST - Testing JSONFixer")
         print("=" * 80)
         
-        let fixer = ParseTreeJSONFixer()
-        let parser = PreciseJSONParser()
+        let fixer = JSONFixer()
+        let parser = JSONParser()
         
         // Critical test cases for missing quotes
         let testCases = [
@@ -53,7 +53,7 @@ struct QuoteFixerTest {
             print("─" * 60)
             print("Input: \(test.1)")
             
-            // Try to fix with ParseTreeJSONFixer
+            // Try to fix with JSONFixer
             let fixResult = await fixer.fix(test.1)
             
             if fixResult.wasFixed {

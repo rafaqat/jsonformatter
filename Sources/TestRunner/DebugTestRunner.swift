@@ -1,8 +1,8 @@
 import Foundation
 import JSONFormatterFeature
 
-// Debug version of ParseTreeJSONFixer to understand what's happening
-public actor DebugParseTreeJSONFixer {
+// Debug version of JSONFixer to understand what's happening
+public actor DebugJSONFixer {
     
     enum Token: Equatable, CustomStringConvertible {
         case leftBrace
@@ -210,7 +210,7 @@ public actor DebugParseTreeJSONFixer {
 
 struct DebugTestRunner {
     static func main() async {
-        let debugFixer = DebugParseTreeJSONFixer()
+        let debugFixer = DebugJSONFixer()
         
         // Test the simple case
         await debugFixer.testFix("""

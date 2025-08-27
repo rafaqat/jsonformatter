@@ -30,8 +30,8 @@ struct TestRunner {
         print("\n🔍 Testing User's Case: Missing [ in coordinates")
         print("-" * 60)
         
-        // Test with ParseTreeJSONFixer
-        let fixer = ParseTreeJSONFixer()
+        // Test with JSONFixer
+        let fixer = JSONFixer()
         let result = await fixer.fix(userCase)
         
         print("Fix attempted: \(result.wasFixed ? "YES" : "NO")")
@@ -39,7 +39,7 @@ struct TestRunner {
             print("Fixes applied: \(result.fixes.joined(separator: ", "))")
             
             // Validate the fixed JSON
-            let parser = PreciseJSONParser()
+            let parser = JSONParser()
             let errors = await parser.validate(result.fixed)
             
             if errors.isEmpty {

@@ -8,8 +8,8 @@ struct BracketTest {
         print("🔍 CRITICAL MISSING BRACKET TEST")
         print("=" * 80)
         
-        let parser = PreciseJSONParser()
-        let fixer = ParseTreeJSONFixer()
+        let parser = JSONParser()
+        let fixer = JSONFixer()
         
         // Focus on the critical missing bracket cases
         let criticalTests = [

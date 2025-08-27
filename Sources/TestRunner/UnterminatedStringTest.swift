@@ -7,8 +7,8 @@ struct UnterminatedStringTest {
         print("🧪 UNTERMINATED STRING FIXER TEST")
         print("=" * 80)
         
-        let fixer = ParseTreeJSONFixer()
-        let parser = PreciseJSONParser()
+        let fixer = JSONFixer()
+        let parser = JSONParser()
         
         // Test cases for unterminated strings
         let testCases = [
@@ -61,7 +61,7 @@ struct UnterminatedStringTest {
             print("Test \(index + 1): \(test.0)")
             print("-" * 60)
             
-            // Try to fix with ParseTreeJSONFixer
+            // Try to fix with JSONFixer
             let fixResult = await fixer.fix(test.1)
             
             if fixResult.wasFixed {

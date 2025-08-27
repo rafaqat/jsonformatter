@@ -82,11 +82,7 @@ public final class DocumentViewModel {
     
     // Services
     private let parser = JSONParser()
-    private let preciseParser = PreciseJSONParser()
-    private let parseTreeFixer = ParseTreeJSONFixer()
-    private let treeWalkingFixer = TreeWalkingJSONFixer()
-    private let smartFixer = SmartJSONFixer()
-    private let validator = JSONValidator()
+    private let jsonFixer = JSONFixer()
     
     public init() {
         // Parse the default JSON content on initialization
@@ -100,12 +96,8 @@ public final class DocumentViewModel {
         try await parser.parse(content)
     }
     
-    nonisolated private func fixInBackground(_ content: String) async -> ParseTreeJSONFixer.FixResult {
-        await parseTreeFixer.fix(content)
-    }
-    
-    nonisolated private func treeWalkFixInBackground(_ content: String) async -> TreeWalkingJSONFixer.FixResult {
-        await treeWalkingFixer.fix(content)
+    nonisolated private func fixInBackground(_ content: String) async -> JSONFixer.FixResult {
+        await jsonFixer.fix(content)
     }
     
     // Format JSON
@@ -223,8 +215,8 @@ public final class DocumentViewModel {
             return
         }
         
-        // Use PreciseJSONParser for detailed error tracking
-        let preciseErrors = await preciseParser.validate(jsonContent)
+        // Use JSONParser for detailed error tracking
+        let preciseErrors = await parser.validate(jsonContent)
         
         if !preciseErrors.isEmpty {
             validationErrors = preciseErrors
@@ -245,9 +237,9 @@ public final class DocumentViewModel {
                 validationErrors = []
                 statusMessage = "Valid JSON"
             } catch {
-                // Fallback to basic validator if parse fails
-                let validationResult = await validator.validate(jsonContent)
-                validationErrors = validationResult.errors
+                // Fallback to parser validation if parse fails
+                let parserErrors = await parser.validate(jsonContent)
+                validationErrors = parserErrors
                 parsedJSON = nil
                 statusMessage = "Invalid JSON"
             }
@@ -296,27 +288,14 @@ public final class DocumentViewModel {
             return
         }
         
-        // IMPORTANT: Run parse tree fixer FIRST to fix structural issues
-        // This will fix missing brackets before the parser sees them
-        let treeFixResult = await fixInBackground(jsonContent)
+        // Run the comprehensive JSON fixer
+        let fixResult = await fixInBackground(jsonContent)
         
-        // Then get parser errors on the potentially fixed JSON
-        let parseErrors = await preciseParser.validate(treeFixResult.fixed)
+        // Get parser errors on the fixed JSON
+        let parseErrors = await parser.validate(fixResult.fixed)
         
-        // Use smart fixer with parser errors for targeted fixes
-        let smartFixResult = await smartFixer.fix(treeFixResult.fixed, errors: parseErrors)
-        
-        // Use tree-walking fixer for deep structural analysis
-        let treeWalkResult = await treeWalkFixInBackground(smartFixResult.fixed)
-        
-        // Run parse tree fixer again for final cleanup
-        let finalTreeFix = await fixInBackground(treeWalkResult.fixed)
-        
-        // Combine results from all fixers
-        let finalFixed = finalTreeFix.wasFixed ? finalTreeFix.fixed :
-                        (treeWalkResult.wasFixed ? treeWalkResult.fixed : 
-                         (smartFixResult.wasFixed ? smartFixResult.fixed : treeFixResult.fixed))
-        let allFixes = treeFixResult.fixes + smartFixResult.fixes + treeWalkResult.fixes + finalTreeFix.fixes
+        let finalFixed = fixResult.fixed
+        let allFixes = fixResult.fixes
         
         if !allFixes.isEmpty {
             jsonContent = finalFixed
@@ -356,7 +335,7 @@ public final class DocumentViewModel {
     
     // Apply fix for a specific error (or all errors)
     public func applyFix(for error: JSONError) async {
-        // Just use the existing auto-fix functionality which uses JSONFixer
+        // Just use the existing auto-fix functionality which uses ParseTreeJSONFixer
         // It will fix ALL issues at once, not just this specific error
         await autoFix()
     }

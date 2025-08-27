@@ -66,11 +66,43 @@ public enum JSONNode: Sendable, Hashable {
 
 extension String {
     var escapedJSON: String {
-        self
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\t", with: "\\t")
+        var result = ""
+        result.reserveCapacity(self.count * 2) // Reserve space for potential escaping
+        
+        for char in self {
+            switch char {
+            case "\\":
+                result.append("\\\\")
+            case "\"":
+                result.append("\\\"")
+            case "\n":
+                result.append("\\n")
+            case "\r":
+                result.append("\\r")
+            case "\t":
+                result.append("\\t")
+            case "\u{8}":  // Backspace
+                result.append("\\b")
+            case "\u{C}":  // Form feed
+                result.append("\\f")
+            default:
+                // Handle other control characters and non-printable Unicode
+                let scalar = char.unicodeScalars.first!
+                if scalar.value < 0x20 || (scalar.value >= 0x7F && scalar.value <= 0x9F) {
+                    // Control characters - escape as \uXXXX
+                    result.append(String(format: "\\u%04X", scalar.value))
+                } else if scalar.value > 0xFFFF {
+                    // Characters outside BMP need surrogate pairs
+                    let codePoint = scalar.value
+                    let high = UInt16((codePoint - 0x10000) >> 10) + 0xD800
+                    let low = UInt16((codePoint - 0x10000) & 0x3FF) + 0xDC00
+                    result.append(String(format: "\\u%04X\\u%04X", high, low))
+                } else {
+                    result.append(char)
+                }
+            }
+        }
+        
+        return result
     }
 }
