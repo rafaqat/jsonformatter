@@ -110,6 +110,10 @@ let package = Package(
         .executable(
             name: "SurrogateFixTest",
             targets: ["SurrogateFixTest"]
+        ),
+        .executable(
+            name: "ParserVsFixerTest",
+            targets: ["ParserVsFixerTest"]
         )
     ],
     dependencies: [
@@ -223,6 +227,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "SurrogateFixTest",
+            dependencies: ["JSONFormatterFeature"]
+        ),
+        .executableTarget(
+            name: "ParserVsFixerTest",
             dependencies: ["JSONFormatterFeature"]
         ),
         .testTarget(
